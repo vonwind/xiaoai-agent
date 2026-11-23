@@ -22,6 +22,62 @@ https://github.com/user-attachments/assets/b12d71b7-6734-4166-a2fe-959f82273702
 - 支持 AirPlay 音频输出：音箱可以作为 AirPlay 音频接收端，播放来自 iPhone、iPad、Mac 等设备的音频流。
 - 保留音箱其它系统能力：麦克风输入会被 `xiaoai-agent` 接管，但蓝牙网关等非语音对话服务不受到影响，且 LED 指示灯动态可以自定义控制。
 
+## 自定义唤醒词与 Songloft 音乐路由（本分支开发目标）
+
+本分支在现有 XiaoAI Agent 内置 Songloft 转发模块的基础上，完善唤醒词分流和音乐控制。**Songloft 已集成在 Agent 中**，不需要单独部署 songloft-mcp；Agent 只负责识别路由并转发用户指令，歌曲搜索、歌单、播放队列和设备播放行为仍由 Songloft 插件处理。本功能不会修改 Songloft 插件。
+
+### 路由目标
+
+- **Agent 唤醒词组**：进入原有 Agent 对话流程，处理普通问答和其他工具。
+- **MCP 专属唤醒词组**：进入 Songloft 路由；在 Direct Mode 下绕过 LLM，将识别文本直接转发给 Songloft。
+- **MCP 触发词组**：即使使用 Agent 唤醒词唤醒，也可在后续语句命中触发词后转发 Songloft。
+- **普通音乐意图开关**：控制未命中专属触发词时，普通音乐请求是否自动转发 Songloft。
+- **Direct Mode**：开启时直接转发，不经过 LLM；关闭时允许 Agent/LLM 决定是否调用现有音乐转发模块。
+- 转发时可配置是否剥离唤醒词/触发词；不应把触发词本身作为歌曲搜索内容发送。
+
+目标路由优先级：
+
+1. MCP 专属唤醒词；
+2. Agent 唤醒后命中 MCP 触发词；
+3. 普通音乐意图（受配置开关控制）；
+4. 其他请求进入 Agent。
+
+### 音乐指令覆盖范围
+
+目标是通过现有 Songloft 命令入口覆盖歌曲和歌手搜索/播放、歌单、搜索结果列表、播放列表、播放/暂停/继续/停止、上一首/下一首、音量、播放模式及收藏等语音控制。Agent 不应自行实现音乐搜索或播放队列，也不能把“命令已提交”误报为“播放已成功”；实际可用操作以 Songloft 插件支持的语音指令为准。
+
+### 配置设计示意
+
+以下是本分支计划支持的配置意图，最终字段以代码和 `agent.example.yaml` 为准：
+
+```yaml
+voice_routing:
+  enabled: true
+  # Agent 路由词组
+  agent_wake_words:
+    - "小爱同学"
+  # MCP 专属路由词组
+  mcp_wake_words:
+    - "音乐助手"
+  # Agent 唤醒后也可触发 MCP
+  mcp_trigger_phrases:
+    - "召唤神龙"
+  # 普通音乐请求是否自动转发
+  music_intent: true
+  # true: MCP 专属路由直接转发，不经过 LLM
+  mcp_direct_mode: true
+  # 转发前移除匹配的唤醒词/触发词
+  strip_wake_word: true
+```
+
+### 原生唤醒前端的限制
+
+当前 Agent 接收的原生 `speech.usock` 协议会报告唤醒/后续录音类型，但现有代码没有收到“具体命中了哪个唤醒词”的字段。因此，**仅在 YAML 中配置多个词并不能让音箱原生 KWS 自动识别多个物理唤醒词**。真正的多物理唤醒词需要先确认并适配固件 `mipns`/KWS 前端是否支持多个词及命中词回传；在这项能力得到验证前，文档中的多组唤醒词属于目标设计，不代表原生固件已经支持。
+
+### 音乐转发边界
+
+Songloft MCP 转发已经集成在 `xiaoai-agent/src/songloft.rs`。本分支只调整 Agent 侧路由、配置、工具描述和文档，不修改 Songloft 插件本身。普通对话、智能家居 MCP 和其他 Agent 工具应继续正常工作。
+
 ## 代码结构
 
 ```text
