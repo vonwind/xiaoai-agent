@@ -22,6 +22,56 @@ https://github.com/user-attachments/assets/b12d71b7-6734-4166-a2fe-959f82273702
 - Supports AirPlay audio output: the speaker can act as an AirPlay audio receiver and play audio streams from iPhone, iPad, Mac, and other devices.
 - Preserves other system capabilities of the speaker: microphone input is taken over by `xiaoai-agent`, but non-voice-conversation services such as the Bluetooth gateway are not affected, and LED indicator animations can be customized.
 
+## Custom Wake-Word Routing and Songloft Music Control (Development Target)
+
+This branch extends the built-in Songloft forwarding module already integrated into XiaoAI Agent. **Songloft is integrated into the Agent**; a separate songloft-mcp deployment is not required. The Agent is responsible for routing and forwarding user commands. Song search, playlists, playback queues, and speaker playback remain the responsibility of the Songloft plugin. This work does not modify the Songloft plugin.
+
+### Routing Goals
+
+- **Agent wake-word group**: enter the existing Agent conversation flow for general questions and other tools.
+- **MCP-only wake-word group**: enter the Songloft route; with Direct Mode enabled, bypass the LLM and forward the recognized command directly to Songloft.
+- **MCP trigger phrases**: even after an Agent wake word, a configured trigger phrase can route the request to Songloft.
+- **Automatic music-intent switch**: controls whether ordinary music requests are forwarded to Songloft when no dedicated trigger phrase matched.
+- **Direct Mode**: when enabled, forward directly without the LLM; when disabled, let the Agent/LLM decide whether to call the existing music forwarding module.
+- Wake words/trigger phrases can be stripped before forwarding so they are not mistaken for song-search terms.
+
+Target routing priority:
+
+1. MCP-only wake word;
+2. MCP trigger phrase after an Agent wake word;
+3. ordinary music intent (controlled by configuration);
+4. all other requests go to the Agent.
+
+### Music Command Coverage
+
+The goal is to forward voice commands for song and artist search/playback, playlists, search-result lists, playback queues, play/pause/resume/stop, previous/next track, volume, playback modes, and favorites through the existing Songloft command endpoint. The Agent must not reimplement music search or queue management, and must not claim playback succeeded merely because a command was submitted. Actual command coverage depends on the Songloft plugin's supported voice commands.
+
+### Configuration Design
+
+The following illustrates the planned configuration intent. Final field names and behavior are defined by the implementation and `agent.example.yaml`:
+
+```yaml
+voice_routing:
+  enabled: true
+  agent_wake_words:
+    - "XiaoAI"
+  mcp_wake_words:
+    - "Music Assistant"
+  mcp_trigger_phrases:
+    - "summon music"
+  music_intent: true
+  mcp_direct_mode: true
+  strip_wake_word: true
+```
+
+### Native Wake-Word Frontend Limitation
+
+The current native `speech.usock` interface reports wake-up/follow-up stream types, but the existing Agent code does not receive a field identifying which wake word matched. **Adding multiple strings to YAML alone cannot make the speaker's native KWS recognize multiple physical wake words.** True multi-keyword hardware wake-up requires verifying and adapting the firmware `mipns`/KWS frontend to support multiple keywords and report the matched keyword. Until verified, multiple wake-word groups are a design target, not a claim that the stock firmware already supports them.
+
+### Music Forwarding Boundary
+
+Songloft forwarding is already integrated in `xiaoai-agent/src/songloft.rs`. This branch changes Agent-side routing, configuration, tool descriptions, and documentation only; it does not modify the Songloft plugin. General conversation, smart-home MCP, and other Agent tools must continue to work.
+
 ## Repository Structure
 
 ```text
