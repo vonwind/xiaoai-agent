@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/b12d71b7-6734-4166-a2fe-959f82273702
 
 - Fully takes over the voice conversation flow: to avoid competing with the native XiaoAI assistant for microphone input, answers, or Xiaomi cloud-side control, this project mutes the native XiaoAI microphone input. Real microphone audio is handled by `xiaoai-agent`, and replies are spoken through the speaker's system TTS command.
 - No separate server required: the Agent runs directly on the speaker and no longer depends on an independent WebSocket message bridge.
-- Reuses native device audio capabilities: it uses the firmware's built-in resident wake word and VPM audio callback mechanism for a polished audio experience; continuous conversation, VAD, interruption, echo cancellation, and recording during playback are supported.
+- Reuses native device audio capabilities: the native MIPNS speech path will remain intact, while an independent Sherpa-ONNX KWS is planned for multiple custom wake words. Continuous dialogue, VAD, interruption, echo cancellation, and recording during playback remain on the existing audio path.
 - Supports tools and device control: it uses a modern Agent framework and includes built-in time, weather, and web search tools; all music requests are forwarded through Songloft MCP to the speaker plugin, and smart home devices can be controlled through other MCP servers.
 - Supports AirPlay audio output: the speaker can act as an AirPlay audio receiver and play audio streams from iPhone, iPad, Mac, and other devices.
 - Preserves other system capabilities of the speaker: microphone input is taken over by `xiaoai-agent`, but non-voice-conversation services such as the Bluetooth gateway are not affected, and LED indicator animations can be customized.
@@ -64,9 +64,17 @@ voice_routing:
   strip_wake_word: true
 ```
 
-### Native Wake-Word Frontend Limitation
+### True Multi-Wake-Word Implementation Plan
 
-The current native `speech.usock` interface reports wake-up/follow-up stream types, but the existing Agent code does not receive a field identifying which wake word matched. **Adding multiple strings to YAML alone cannot make the speaker's native KWS recognize multiple physical wake words.** True multi-keyword hardware wake-up requires verifying and adapting the firmware `mipns`/KWS frontend to support multiple keywords and report the matched keyword. Until verified, multiple wake-word groups are a design target, not a claim that the stock firmware already supports them.
+This branch follows the previously agreed **independent Sherpa-ONNX KWS alongside the native MIPNS path**. It does not depend on Xiaomi's native KWS supporting multiple keywords, and it is not a two-stage flow that first requires saying “XiaoAI”.
+
+- Keep native MIPNS for the existing XiaoAI wake word, VPM microphone-array processing, AEC, beamforming, and native speech sessions.
+- Add independent Sherpa-ONNX KWS to detect configured custom wake words while idle. Agent and MCP-only wake-word groups must each accept multiple entries.
+- KWS must report the exact matched keyword/group ID so the runtime can select the Agent or Songloft MCP route.
+- A KWS hit must safely start/join an Agent speech session and preserve the first utterance after the wake word.
+- The music-intent switch, MCP Direct Mode, trigger phrases, and Songloft forwarding follow the routing rules above.
+
+**Audio ingress is a required engineering gate:** the current `speech.usock` only supplies audio after native MIPNS has already woken and opened a speech stream. It cannot by itself feed an always-on standby KWS. Sherpa-ONNX needs continuous 16 kHz mono PCM, so implementation must first identify a VPM-processed PCM tap/callback that does not compete with MIPNS for microphone ownership. Do not assume a second process can safely open the ALSA microphone, and do not mistake post-wake `speech.usock` audio for standby audio. Until this audio path is validated, multi-wake-word support remains a development goal, not an implemented feature.
 
 ### Music Forwarding Boundary
 
